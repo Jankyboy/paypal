@@ -1,6 +1,7 @@
 package paypal
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -391,6 +392,16 @@ func (ts *webprofileTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request
 			ts.deleteinvalid(w, r)
 		}
 	}
+	if r.RequestURI == "/v1/billing-agreements/agreement-tokens" {
+		if r.Method == "POST" {
+			ts.create(w, r)
+		}
+	}
+	if r.RequestURI == "/v1/billing-agreements/agreements" {
+		if r.Method == "POST" {
+			ts.createWithoutName(w, r)
+		}
+	}
 }
 
 func (ts *webprofileTestServer) create(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +435,34 @@ func (ts *webprofileTestServer) create(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusCreated)
 	}
+
+	res, _ := json.Marshal(raw)
+	w.Write(res)
+}
+
+func (ts *webprofileTestServer) createWithoutName(w http.ResponseWriter, r *http.Request) {
+	var data map[string]interface{}
+
+	body, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	err = json.Unmarshal(body, &data)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	var raw map[string]string
+
+	w.Header().Set("Content-Type", "application/json")
+
+	raw = map[string]string{
+		"id": "B-12345678901234567",
+	}
+	w.WriteHeader(http.StatusCreated)
 
 	res, _ := json.Marshal(raw)
 	w.Write(res)
@@ -590,7 +629,7 @@ func TestCreateWebProfile_valid(t *testing.T) {
 		},
 	}
 
-	res, err := c.CreateWebProfile(wp)
+	res, err := c.CreateWebProfile(context.Background(), wp)
 
 	if err != nil {
 		t.Fatal(err)
@@ -609,7 +648,7 @@ func TestCreateWebProfile_invalid(t *testing.T) {
 
 	wp := WebProfile{}
 
-	_, err := c.CreateWebProfile(wp)
+	_, err := c.CreateWebProfile(context.Background(), wp)
 
 	if err == nil {
 		t.Fatalf("expecting an error got nil")
@@ -622,7 +661,7 @@ func TestGetWebProfile_valid(t *testing.T) {
 
 	c, _ := NewClient("foo", "bar", ts.URL)
 
-	res, err := c.GetWebProfile("XP-CP6S-W9DY-96H8-MVN2")
+	res, err := c.GetWebProfile(context.Background(), "XP-CP6S-W9DY-96H8-MVN2")
 
 	if err != nil {
 		t.Fatal(err)
@@ -643,7 +682,7 @@ func TestGetWebProfile_invalid(t *testing.T) {
 
 	c, _ := NewClient("foo", "bar", ts.URL)
 
-	_, err := c.GetWebProfile("foobar")
+	_, err := c.GetWebProfile(context.Background(), "foobar")
 
 	if err == nil {
 		t.Fatalf("expecting an error got nil")
@@ -656,7 +695,7 @@ func TestGetWebProfiles(t *testing.T) {
 
 	c, _ := NewClient("foo", "bar", ts.URL)
 
-	res, err := c.GetWebProfiles()
+	res, err := c.GetWebProfiles(context.Background())
 
 	if err != nil {
 		t.Fatal(err)
@@ -678,7 +717,7 @@ func TestSetWebProfile_valid(t *testing.T) {
 		Name: "Shop T-Shirt YeowZa!",
 	}
 
-	err := c.SetWebProfile(wp)
+	err := c.SetWebProfile(context.Background(), wp)
 
 	if err != nil {
 		t.Fatal(err)
@@ -696,7 +735,7 @@ func TestSetWebProfile_invalid(t *testing.T) {
 		ID: "foobar",
 	}
 
-	err := c.SetWebProfile(wp)
+	err := c.SetWebProfile(context.Background(), wp)
 
 	if err == nil {
 		t.Fatal(err)
@@ -704,7 +743,7 @@ func TestSetWebProfile_invalid(t *testing.T) {
 
 	wp = WebProfile{}
 
-	err = c.SetWebProfile(wp)
+	err = c.SetWebProfile(context.Background(), wp)
 
 	if err == nil {
 		t.Fatal(err)
@@ -722,7 +761,7 @@ func TestDeleteWebProfile_valid(t *testing.T) {
 		Name: "Shop T-Shirt YeowZa!",
 	}
 
-	err := c.SetWebProfile(wp)
+	err := c.SetWebProfile(context.Background(), wp)
 
 	if err != nil {
 		t.Fatal(err)
@@ -736,10 +775,45 @@ func TestDeleteWebProfile_invalid(t *testing.T) {
 
 	c, _ := NewClient("foo", "bar", ts.URL)
 
-	err := c.DeleteWebProfile("foobar")
+	err := c.DeleteWebProfile(context.Background(), "foobar")
 
 	if err == nil {
 		t.Fatal(err)
 	}
 
+}
+
+func TestCreateBillingAgreementToken(t *testing.T) {
+
+	ts := httptest.NewServer(&webprofileTestServer{t: t})
+	defer ts.Close()
+
+	c, _ := NewClient("foo", "bar", ts.URL)
+
+	_, err := c.CreateBillingAgreementToken(
+		context.Background(),
+		"name A",
+		"description A",
+		"start date A",
+		&Payer{PaymentMethod: "paypal"},
+		&BillingPlan{ID: "id B", Name: "name B", Description: "description B", Type: "type B"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestCreateBillingAgreementFromToken(t *testing.T) {
+
+	ts := httptest.NewServer(&webprofileTestServer{t: t})
+	defer ts.Close()
+
+	c, _ := NewClient("foo", "bar", ts.URL)
+
+	_, err := c.CreateBillingAgreementFromToken(context.Background(),"BillingAgreementToken")
+
+	if err != nil {
+		t.Fatal(err)
+	}
 }
